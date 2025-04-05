@@ -1,0 +1,212 @@
+GCP Automated CI/CD Script with Auto-Scaling for Heavy Applications
+
+1. Overview
+
+This document outlines the CI/CD process and infrastructure setup to automatically deploy and scale a heavy-load application on Google Cloud Platform (GCP) using Docker, Kubernetes (GKE), and GitHub Actions.
+
+2. Technologies & Tools Used
+
+Category
+
+Technology / Tool
+
+Purpose
+
+Version Control
+
+GitHub
+
+Source code management and collaboration
+
+CI/CD
+
+GitHub Actions
+
+Automating build, test, and deployment
+
+Containerization
+
+Docker
+
+Creating lightweight, portable app containers
+
+Orchestration
+
+Kubernetes (GKE)
+
+Deploying and managing containers at scale
+
+Infrastructure as Code
+
+Terraform
+
+Automating GCP infrastructure provisioning
+
+Container Registry
+
+Google Container Registry (GCR)
+
+Storing and managing Docker images
+
+Load Balancing
+
+GCP HTTP(S) Load Balancer
+
+Distributing traffic across services
+
+Auto-Scaling
+
+Horizontal Pod Autoscaler (HPA)
+
+Scaling pods based on load automatically
+
+Monitoring
+
+Google Cloud Monitoring
+
+Observability and alerting
+
+Secrets Management
+
+GCP Secret Manager
+
+Managing sensitive configurations
+
+3. Architecture Diagram
+
+Developer
+   │
+   ▼
+GitHub Repository ─────► GitHub Actions (CI/CD)
+                             │
+                             ▼
+                     Docker Image Build
+                             │
+                             ▼
+                   Google Container Registry (GCR)
+                             │
+                             ▼
+                     Deploy to GKE Cluster
+                             │
+                             ▼
+              Horizontal Pod Autoscaler (HPA)
+                             │
+                             ▼
+                GCP Load Balancer + Monitoring
+
+4. GCP Setup Steps
+
+Step 1: Provision Infrastructure using Terraform
+
+VPC network, subnets
+
+GKE Cluster with node pools
+
+GCR enabled
+
+IAM roles for service accounts
+
+Step 2: Create GitHub Secrets
+
+GCP_PROJECT_ID
+
+GCP_SA_KEY (base64 encoded)
+
+GKE_CLUSTER_NAME
+
+GKE_ZONE
+
+Step 3: Configure Kubernetes for Auto-scaling
+
+Enable Metrics Server in GKE
+
+Use Horizontal Pod Autoscaler (HPA):
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-barcode-scanner-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-barcode-scanner
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+
+5. GitHub Actions CI/CD Workflow Script
+
+name: Deploy to GKE with Auto-scaling
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Build and Push Docker Image
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          echo ${{ secrets.GCP_SA_KEY }} | base64 --decode > key.json
+          gcloud auth activate-service-account --key-file=key.json
+          gcloud config set project $PROJECT_ID
+          gcloud auth configure-docker
+          docker build -t gcr.io/$PROJECT_ID/ai-barcode-scanner:latest .
+          docker push gcr.io/$PROJECT_ID/ai-barcode-scanner:latest
+
+      - name: Set up GKE and Deploy to Cluster
+        run: |
+          gcloud container clusters get-credentials ${{ secrets.GKE_CLUSTER_NAME }} --zone ${{ secrets.GKE_ZONE }}
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/hpa.yaml
+
+6. Kubernetes Deployment YAML (k8s/deployment.yaml)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-barcode-scanner
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-barcode-scanner
+  template:
+    metadata:
+      labels:
+        app: ai-barcode-scanner
+    spec:
+      containers:
+      - name: ai-barcode-scanner
+        image: gcr.io/YOUR_PROJECT_ID/ai-barcode-scanner:latest
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+
+7. Benefits of This Setup
+
+✅ Fully automated CI/CD pipeline✅ Supports high-traffic applications✅ Dynamic scaling based on usage✅ Infrastructure is reproducible and secure✅ Developer-friendly workflow
